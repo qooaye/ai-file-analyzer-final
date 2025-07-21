@@ -737,6 +737,7 @@ app.get('/', (req, res) => {
                                 <th>ID</th>
                                 <th>分析摘要</th>
                                 <th>創建時間</th>
+                                <th>更新時間</th>
                                 <th>操作</th>
                             </tr>
                         </thead>
@@ -951,21 +952,28 @@ app.get('/', (req, res) => {
             function displayAnalyses(analyses) {
                 const tableBody = document.getElementById('analysisTable');
                 if (analyses.length === 0) {
-                    tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #666;">沒有找到數據</td></tr>';
+                    tableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #666;">沒有找到數據</td></tr>';
                     return;
                 }
 
-                tableBody.innerHTML = analyses.map(analysis => \`
+                tableBody.innerHTML = analyses.map(analysis => {
+                    const createdAt = new Date(analysis.created_at).toLocaleString();
+                    const updatedAt = new Date(analysis.updated_at).toLocaleString();
+                    const isUpdated = analysis.created_at !== analysis.updated_at;
+                    
+                    return \`
                     <tr>
                         <td>\${analysis.id}</td>
                         <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="\${analysis.analysis_summary}">\${analysis.analysis_summary.substring(0, 100)}...</td>
-                        <td>\${new Date(analysis.created_at).toLocaleString()}</td>
+                        <td>\${createdAt}</td>
+                        <td style="\${isUpdated ? 'color: #007bff; font-weight: bold;' : 'color: #666;'}" title="\${isUpdated ? '已編輯' : '未編輯'}">\${updatedAt}</td>
                         <td>
                             <button class="btn btn-warning" onclick="editAnalysis(\${analysis.id})">編輯</button>
                             <button class="btn btn-danger" onclick="deleteAnalysis(\${analysis.id})">刪除</button>
                         </td>
                     </tr>
-                \`).join('');
+                \`;
+                }).join('');
             }
 
             function editAnalysis(id) {
