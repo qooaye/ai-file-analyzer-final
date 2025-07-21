@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const sqlite3 = require('sqlite3').verbose();
+const { Client: PgClient } = require('pg');
 const mammoth = require('mammoth');
 const pdf = require('pdf-parse');
 const xlsx = require('xlsx');
@@ -14,7 +15,7 @@ const Tesseract = require('tesseract.js');
 const sharp = require('sharp');
 
 const app = express();
-const PORT = 8080;
+const PORT = process.env.PORT || 8080;
 
 // 初始化 Hugging Face 免費 AI 模型
 const hf = new HfInference(); // 不需要 API key 的免費模型
@@ -92,19 +93,101 @@ ${extractedText}
   }
 }
 
-// 初始化數據庫
-const db = new sqlite3.Database('./analysis.db');
+// 數據庫抽象層
+class DatabaseManager {
+  constructor() {
+    this.isPostgres = !!process.env.DATABASE_URL;
+    this.init();
+  }
 
-// 創建表格
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS analyses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    analysis_summary TEXT NOT NULL,
-    content_text TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
-});
+  async init() {
+    if (this.isPostgres) {
+      console.log('🐘 使用 PostgreSQL 數據庫');
+      this.client = new PgClient({
+        connectionString: process.env.DATABASE_URL,
+        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+      });
+      
+      try {
+        await this.client.connect();
+        console.log('✅ PostgreSQL 連接成功');
+        await this.client.query(`CREATE TABLE IF NOT EXISTS analyses (
+          id SERIAL PRIMARY KEY,
+          analysis_summary TEXT NOT NULL,
+          content_text TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`);
+      } catch (err) {
+        console.error('❌ PostgreSQL 連接失敗:', err);
+      }
+    } else {
+      console.log('📁 使用 SQLite 數據庫');
+      this.client = new sqlite3.Database('./analysis.db');
+      
+      this.client.serialize(() => {
+        this.client.run(`CREATE TABLE IF NOT EXISTS analyses (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          analysis_summary TEXT NOT NULL,
+          content_text TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`);
+      });
+    }
+  }
+
+  async run(sql, params = []) {
+    return new Promise((resolve, reject) => {
+      if (this.isPostgres) {
+        this.client.query(sql, params)
+          .then(result => {
+            const lastID = result.rows[0]?.id || result.rows[0]?.ID || null;
+            resolve({ lastID, changes: result.rowCount });
+          })
+          .catch(reject);
+      } else {
+        this.client.run(sql, params, function(err) {
+          if (err) reject(err);
+          else resolve({ lastID: this.lastID, changes: this.changes });
+        });
+      }
+    });
+  }
+
+  async all(sql, params = []) {
+    return new Promise((resolve, reject) => {
+      if (this.isPostgres) {
+        this.client.query(sql, params)
+          .then(result => resolve(result.rows))
+          .catch(reject);
+      } else {
+        this.client.all(sql, params, (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows);
+        });
+      }
+    });
+  }
+
+  async get(sql, params = []) {
+    return new Promise((resolve, reject) => {
+      if (this.isPostgres) {
+        this.client.query(sql, params)
+          .then(result => resolve(result.rows[0]))
+          .catch(reject);
+      } else {
+        this.client.get(sql, params, (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        });
+      }
+    });
+  }
+}
+
+// 初始化數據庫管理器
+const dbManager = new DatabaseManager();
 
 // 設置文件上傳
 const storage = multer.diskStorage({
@@ -1009,25 +1092,23 @@ app.post('/analyze', upload.array('files'), async (req, res) => {
     const aiSummary = await performAIAnalysis(combinedText, fileNames);
 
     // 保存到數據庫
-    db.run(
-      'INSERT INTO analyses (analysis_summary, content_text) VALUES (?, ?)',
-      [aiSummary, combinedText],
-      function(err) {
-        if (err) {
-          console.error('數據庫錯誤:', err);
-          res.json({ success: false, error: '數據庫保存失敗' });
-        } else {
-          res.json({ success: true, id: this.lastID });
-        }
+    try {
+      const sql = dbManager.isPostgres 
+        ? 'INSERT INTO analyses (analysis_summary, content_text) VALUES ($1, $2) RETURNING id'
+        : 'INSERT INTO analyses (analysis_summary, content_text) VALUES (?, ?)';
+      const result = await dbManager.run(sql, [aiSummary, combinedText]);
+      res.json({ success: true, id: result.lastID });
+    } catch (err) {
+      console.error('數據庫錯誤:', err);
+      res.json({ success: false, error: '數據庫保存失敗' });
+    }
 
-        // 清理臨時文件
-        files.forEach(file => {
-          fs.unlink(file.path, (err) => {
-            if (err) console.error('刪除臨時文件失敗:', err);
-          });
-        });
-      }
-    );
+    // 清理臨時文件
+    files.forEach(file => {
+      fs.unlink(file.path, (err) => {
+        if (err) console.error('刪除臨時文件失敗:', err);
+      });
+    });
 
   } catch (error) {
     console.error('分析錯誤:', error);
@@ -1036,78 +1117,84 @@ app.post('/analyze', upload.array('files'), async (req, res) => {
 });
 
 // 獲取所有分析記錄
-app.get('/analyses', (req, res) => {
-  db.all('SELECT * FROM analyses ORDER BY created_at DESC', (err, rows) => {
-    if (err) {
-      console.error('數據庫錯誤:', err);
-      res.json([]);
-    } else {
-      res.json(rows);
-    }
-  });
+app.get('/analyses', async (req, res) => {
+  try {
+    const rows = await dbManager.all('SELECT * FROM analyses ORDER BY created_at DESC');
+    res.json(rows);
+  } catch (err) {
+    console.error('數據庫錯誤:', err);
+    res.json([]);
+  }
 });
 
 // 搜索分析記錄
-app.get('/analyses/search', (req, res) => {
+app.get('/analyses/search', async (req, res) => {
   const keyword = req.query.keyword || '';
-  const sql = 'SELECT * FROM analyses WHERE analysis_summary LIKE ? OR content_text LIKE ? ORDER BY created_at DESC';
+  const sql = dbManager.isPostgres 
+    ? 'SELECT * FROM analyses WHERE analysis_summary ILIKE $1 OR content_text ILIKE $2 ORDER BY created_at DESC'
+    : 'SELECT * FROM analyses WHERE analysis_summary LIKE ? OR content_text LIKE ? ORDER BY created_at DESC';
   const params = [`%${keyword}%`, `%${keyword}%`];
   
-  db.all(sql, params, (err, rows) => {
-    if (err) {
-      console.error('數據庫錯誤:', err);
-      res.json([]);
-    } else {
-      res.json(rows);
-    }
-  });
+  try {
+    const rows = await dbManager.all(sql, params);
+    res.json(rows);
+  } catch (err) {
+    console.error('數據庫錯誤:', err);
+    res.json([]);
+  }
 });
 
 // 獲取單個分析記錄
-app.get('/analyses/:id', (req, res) => {
+app.get('/analyses/:id', async (req, res) => {
   const id = req.params.id;
-  db.get('SELECT * FROM analyses WHERE id = ?', [id], (err, row) => {
-    if (err) {
-      console.error('數據庫錯誤:', err);
-      res.json({ success: false, error: '獲取數據失敗' });
-    } else if (!row) {
+  const sql = dbManager.isPostgres ? 'SELECT * FROM analyses WHERE id = $1' : 'SELECT * FROM analyses WHERE id = ?';
+  
+  try {
+    const row = await dbManager.get(sql, [id]);
+    if (!row) {
       res.json({ success: false, error: '記錄不存在' });
     } else {
       res.json(row);
     }
-  });
+  } catch (err) {
+    console.error('數據庫錯誤:', err);
+    res.json({ success: false, error: '獲取數據失敗' });
+  }
 });
 
 // 更新分析記錄
-app.put('/analyses/:id', (req, res) => {
+app.put('/analyses/:id', async (req, res) => {
   const id = req.params.id;
   const { analysis_summary, content_text } = req.body;
+  const sql = dbManager.isPostgres 
+    ? 'UPDATE analyses SET analysis_summary = $1, content_text = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3'
+    : 'UPDATE analyses SET analysis_summary = ?, content_text = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
   
-  db.run(
-    'UPDATE analyses SET analysis_summary = ?, content_text = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-    [analysis_summary, content_text, id],
-    function(err) {
-      if (err) {
-        console.error('數據庫錯誤:', err);
-        res.json({ success: false, error: '更新失敗' });
-      } else {
-        res.json({ success: true, changes: this.changes });
-      }
-    }
-  );
+  try {
+    const result = await dbManager.run(sql, [analysis_summary, content_text, id]);
+    res.json({ success: true, changes: result.changes });
+  } catch (err) {
+    console.error('數據庫錯誤:', err);
+    res.json({ success: false, error: '更新失敗' });
+  }
 });
 
 // 刪除分析記錄
-app.delete('/analyses/:id', (req, res) => {
+app.delete('/analyses/:id', async (req, res) => {
   const id = req.params.id;
-  db.run('DELETE FROM analyses WHERE id = ?', [id], function(err) {
-    if (err) {
-      console.error('數據庫錯誤:', err);
-      res.json({ success: false, error: '刪除失敗' });
+  const sql = dbManager.isPostgres ? 'DELETE FROM analyses WHERE id = $1' : 'DELETE FROM analyses WHERE id = ?';
+  
+  try {
+    const result = await dbManager.run(sql, [id]);
+    if (result.changes === 0) {
+      res.json({ success: false, error: '記錄不存在' });
     } else {
-      res.json({ success: true, changes: this.changes });
+      res.json({ success: true, message: '刪除成功' });
     }
-  });
+  } catch (err) {
+    console.error('數據庫錯誤:', err);
+    res.json({ success: false, error: '刪除失敗' });
+  }
 });
 
 app.listen(PORT, () => {
