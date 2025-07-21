@@ -774,19 +774,6 @@ app.get('/', (req, res) => {
                     box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
                 }
                 
-                /* 增加觸控目標間距 */
-                .card-actions {
-                    display: flex;
-                    gap: 15px;
-                    margin-top: 15px;
-                }
-                
-                .card-actions .btn {
-                    flex: 1;
-                    text-align: center;
-                    touch-action: manipulation; /* 優化觸控響應 */
-                }
-                
                 /* 防止雙擊縮放 */
                 * {
                     touch-action: pan-x pan-y;
@@ -798,12 +785,12 @@ app.get('/', (req, res) => {
                 
                 /* 隱藏桌面版表格 */
                 .table-container {
-                    display: none;
+                    display: none !important;
                 }
                 
                 /* 行動版卡片布局 */
                 .mobile-cards {
-                    display: block;
+                    display: block !important;
                 }
                 
                 .analysis-card {
@@ -834,6 +821,7 @@ app.get('/', (req, res) => {
                     margin-bottom: 10px;
                     line-height: 1.4;
                     color: #333;
+                    word-wrap: break-word;
                 }
                 
                 .card-times {
@@ -844,6 +832,7 @@ app.get('/', (req, res) => {
                 
                 .card-time {
                     margin-bottom: 5px;
+                    word-wrap: break-word;
                 }
                 
                 .card-updated {
@@ -854,11 +843,17 @@ app.get('/', (req, res) => {
                 .card-actions {
                     display: flex;
                     gap: 10px;
+                    margin-top: 15px;
                 }
                 
                 .card-actions .btn {
                     flex: 1;
                     text-align: center;
+                    touch-action: manipulation;
+                    min-height: 48px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
                 }
                 
                 /* 模態框在手機版的調整 */
