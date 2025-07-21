@@ -1,0 +1,30 @@
+{
+  "name": "ai-file-analyzer",
+  "version": "1.0.0",
+  "description": "AI文件分析系統 - 支援多格式文件上傳、OCR圖片識別、AI智能分析",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": ["ai", "file-analysis", "ocr", "document-processing"],
+  "author": "AI File Analyzer",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
+    "sqlite3": "^5.1.6",
+    "mammoth": "^1.6.0",
+    "pdf-parse": "^1.1.1",
+    "xlsx": "^0.18.5",
+    "cheerio": "^1.0.0-rc.12",
+    "epub2": "^2.0.1",
+    "iconv-lite": "^0.6.3",
+    "@huggingface/inference": "^2.6.4",
+    "tesseract.js": "^5.0.0",
+    "sharp": "^0.33.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
