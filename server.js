@@ -485,21 +485,22 @@ app.get('/', (req, res) => {
     <head>
         <title>文件AI分析系統</title>
         <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <style>
-            body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
-            .container { max-width: 1200px; margin: 0 auto; }
+            body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 10px; background: #f5f5f5; }
+            .container { max-width: 1200px; margin: 0 auto; padding: 0 10px; }
             .upload-section { margin-bottom: 30px; }
             .data-section { margin-top: 30px; }
             .upload-area { 
                 border: 3px dashed #007bff; 
-                padding: 40px; 
+                padding: 30px 20px; 
                 text-align: center; 
                 margin: 20px 0; 
                 border-radius: 15px;
                 background: white;
                 transition: all 0.3s ease;
                 cursor: pointer;
-                min-height: 150px;
+                min-height: 120px;
                 display: flex;
                 flex-direction: column;
                 justify-content: center;
@@ -699,6 +700,224 @@ app.get('/', (req, res) => {
             #editContent {
                 min-height: 500px;
             }
+
+            /* 響應式設計 - 手機版 */
+            @media (max-width: 768px) {
+                .container {
+                    padding: 10px;
+                }
+                
+                h1 {
+                    font-size: 24px;
+                    margin-bottom: 20px;
+                }
+                
+                .upload-area {
+                    padding: 30px 15px;
+                    margin-bottom: 20px;
+                }
+                
+                .upload-text {
+                    font-size: 16px;
+                }
+                
+                .upload-hint {
+                    font-size: 12px;
+                }
+                
+                .search-area {
+                    flex-direction: column;
+                    gap: 10px;
+                }
+                
+                .search-input {
+                    margin-right: 0;
+                    margin-bottom: 10px;
+                }
+                
+                .btn {
+                    padding: 12px 20px;
+                    font-size: 16px;
+                    min-height: 48px; /* 觸控友好的最小高度 */
+                    min-width: 48px; /* 觸控友好的最小寬度 */
+                    -webkit-tap-highlight-color: rgba(0,0,0,0.1);
+                    transition: all 0.2s ease;
+                }
+                
+                .btn:active {
+                    transform: scale(0.98);
+                    background-color: rgba(0,0,0,0.1);
+                }
+                
+                /* 文件輸入和上傳區域優化 */
+                .upload-area {
+                    -webkit-tap-highlight-color: rgba(0,0,0,0.1);
+                    transition: all 0.3s ease;
+                }
+                
+                .upload-area:active {
+                    transform: scale(0.99);
+                    background-color: #f0f8ff;
+                }
+                
+                .search-input {
+                    font-size: 16px; /* 防止 iOS Safari 縮放 */
+                    min-height: 48px;
+                    padding: 12px 15px;
+                    border-radius: 8px;
+                    -webkit-appearance: none; /* 移除 iOS 默認樣式 */
+                }
+                
+                .search-input:focus {
+                    outline: none;
+                    border-color: #007bff;
+                    box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+                }
+                
+                /* 增加觸控目標間距 */
+                .card-actions {
+                    display: flex;
+                    gap: 15px;
+                    margin-top: 15px;
+                }
+                
+                .card-actions .btn {
+                    flex: 1;
+                    text-align: center;
+                    touch-action: manipulation; /* 優化觸控響應 */
+                }
+                
+                /* 防止雙擊縮放 */
+                * {
+                    touch-action: pan-x pan-y;
+                }
+                
+                input, textarea, button {
+                    touch-action: manipulation;
+                }
+                
+                /* 隱藏桌面版表格 */
+                .table-container {
+                    display: none;
+                }
+                
+                /* 行動版卡片布局 */
+                .mobile-cards {
+                    display: block;
+                }
+                
+                .analysis-card {
+                    background: white;
+                    border: 1px solid #ddd;
+                    border-radius: 8px;
+                    margin-bottom: 15px;
+                    padding: 15px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }
+                
+                .card-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 10px;
+                    padding-bottom: 10px;
+                    border-bottom: 1px solid #eee;
+                }
+                
+                .card-id {
+                    font-weight: bold;
+                    color: #007bff;
+                    font-size: 18px;
+                }
+                
+                .card-summary {
+                    margin-bottom: 10px;
+                    line-height: 1.4;
+                    color: #333;
+                }
+                
+                .card-times {
+                    margin-bottom: 15px;
+                    font-size: 14px;
+                    color: #666;
+                }
+                
+                .card-time {
+                    margin-bottom: 5px;
+                }
+                
+                .card-updated {
+                    color: #007bff !important;
+                    font-weight: bold;
+                }
+                
+                .card-actions {
+                    display: flex;
+                    gap: 10px;
+                }
+                
+                .card-actions .btn {
+                    flex: 1;
+                    text-align: center;
+                }
+                
+                /* 模態框在手機版的調整 */
+                .modal {
+                    padding: 0;
+                }
+                
+                .modal-content {
+                    width: 100%;
+                    height: 100vh;
+                    max-width: 100%;
+                    max-height: 100%;
+                    border-radius: 0;
+                    margin: 0;
+                }
+                
+                .modal-header {
+                    padding: 15px 20px;
+                }
+                
+                .modal-header h2 {
+                    font-size: 20px;
+                }
+                
+                .close {
+                    font-size: 28px;
+                    padding: 5px;
+                }
+                
+                .modal-body {
+                    padding: 0 20px;
+                }
+                
+                .form-group textarea {
+                    font-size: 16px; /* 防止 iOS Safari 縮放 */
+                    min-height: 200px;
+                }
+                
+                #editSummary {
+                    min-height: 150px;
+                }
+                
+                #editContent {
+                    min-height: 300px;
+                }
+                
+                .modal-footer {
+                    padding: 15px 20px;
+                }
+                
+                .modal-footer .btn {
+                    margin-left: 8px;
+                }
+            }
+            
+            /* 桌面版默認隱藏卡片 */
+            .mobile-cards {
+                display: none;
+            }
         </style>
     </head>
     <body>
@@ -745,6 +964,11 @@ app.get('/', (req, res) => {
                             <!-- 數據將動態加載 -->
                         </tbody>
                     </table>
+                </div>
+                
+                <!-- 行動版卡片布局 -->
+                <div class="mobile-cards" id="mobileCards">
+                    <!-- 卡片將動態加載 -->
                 </div>
             </div>
         </div>
@@ -951,11 +1175,15 @@ app.get('/', (req, res) => {
 
             function displayAnalyses(analyses) {
                 const tableBody = document.getElementById('analysisTable');
+                const mobileCards = document.getElementById('mobileCards');
+                
                 if (analyses.length === 0) {
                     tableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #666;">沒有找到數據</td></tr>';
+                    mobileCards.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">沒有找到數據</div>';
                     return;
                 }
 
+                // 桌面版表格
                 tableBody.innerHTML = analyses.map(analysis => {
                     const createdAt = new Date(analysis.created_at).toLocaleString();
                     const updatedAt = new Date(analysis.updated_at).toLocaleString();
@@ -972,6 +1200,32 @@ app.get('/', (req, res) => {
                             <button class="btn btn-danger" onclick="deleteAnalysis(\${analysis.id})">刪除</button>
                         </td>
                     </tr>
+                \`;
+                }).join('');
+                
+                // 行動版卡片
+                mobileCards.innerHTML = analyses.map(analysis => {
+                    const createdAt = new Date(analysis.created_at).toLocaleString();
+                    const updatedAt = new Date(analysis.updated_at).toLocaleString();
+                    const isUpdated = analysis.created_at !== analysis.updated_at;
+                    
+                    return \`
+                    <div class="analysis-card">
+                        <div class="card-header">
+                            <div class="card-id">ID: \${analysis.id}</div>
+                        </div>
+                        <div class="card-summary">\${analysis.analysis_summary}</div>
+                        <div class="card-times">
+                            <div class="card-time"><strong>創建：</strong>\${createdAt}</div>
+                            <div class="card-time \${isUpdated ? 'card-updated' : ''}" \${isUpdated ? 'title="已編輯"' : 'title="未編輯"'}>
+                                <strong>更新：</strong>\${updatedAt}
+                            </div>
+                        </div>
+                        <div class="card-actions">
+                            <button class="btn btn-warning" onclick="editAnalysis(\${analysis.id})">編輯</button>
+                            <button class="btn btn-danger" onclick="deleteAnalysis(\${analysis.id})">刪除</button>
+                        </div>
+                    </div>
                 \`;
                 }).join('');
             }
