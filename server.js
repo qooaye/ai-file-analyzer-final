@@ -459,6 +459,210 @@ function analyzeRelationships(fileNames) {
   return `檢測到 ${uniqueTypes.length} 種文件類型，文件間可能存在格式互補性`;
 }
 
+// 從分析摘要中精確提取智能摘要和核心關鍵詞
+function extractConceptsFromAnalysis(analysisText, contentText) {
+  const concepts = [];
+  
+  console.log('分析摘要內容預覽:', analysisText.substring(0, 200));
+  
+  // 精確提取「智能摘要」區塊內容
+  const smartSummaryMatch = analysisText.match(/##\s*智能摘要[\s\S]*?(?=##|$)/i);
+  let smartSummaryContent = '';
+  if (smartSummaryMatch) {
+    smartSummaryContent = smartSummaryMatch[0].replace(/##\s*智能摘要/i, '').trim();
+    console.log('提取到智能摘要:', smartSummaryContent.substring(0, 100));
+  }
+  
+  // 精確提取「核心關鍵詞」區塊內容
+  const keywordsMatch = analysisText.match(/##\s*核心關鍵詞[\s\S]*?(?=##|$)/i);
+  let keywordsContent = '';
+  if (keywordsMatch) {
+    keywordsContent = keywordsMatch[0].replace(/##\s*核心關鍵詞/i, '').trim();
+    console.log('提取到核心關鍵詞:', keywordsContent.substring(0, 100));
+  }
+  
+  // 從智能摘要中提取概念
+  if (smartSummaryContent) {
+    // 提取重要句子（包含關鍵動詞或形容詞）
+    const importantSentences = smartSummaryContent.match(/[^。！？\n]*[介紹|討論|分析|探討|提到|說明|建議|方法|策略|原則|特點|優勢|重要|關鍵|核心|主要][^。！？\n]*[。！？]/g) || [];
+    
+    importantSentences.slice(0, 3).forEach(sentence => {
+      const cleanSentence = sentence.replace(/[。！？\-\*]/g, '').trim();
+      if (cleanSentence.length > 8 && cleanSentence.length < 60) {
+        concepts.push({
+          concept: cleanSentence,
+          importance: 'high',
+          source: 'smart_summary'
+        });
+      }
+    });
+  }
+  
+  // 從核心關鍵詞中提取概念
+  if (keywordsContent) {
+    // 提取關鍵詞（去除符號和數字）
+    const keywordMatches = keywordsContent.match(/[\u4e00-\u9fa5A-Za-z]{2,15}/g) || [];
+    
+    keywordMatches.slice(0, 4).forEach(keyword => {
+      if (!['文件', '處理', '系統', '分析', '內容', '數據', '信息', '結果'].includes(keyword)) {
+        concepts.push({
+          concept: keyword,
+          importance: 'medium',
+          source: 'keywords'
+        });
+      }
+    });
+  }
+  
+  // 如果智能摘要和關鍵詞都沒有內容，從整個分析文本中提取
+  if (concepts.length === 0) {
+    console.log('未找到智能摘要和核心關鍵詞區塊，從整體分析中提取');
+    
+    // 排除統計信息和文件處理信息的區塊
+    const filteredText = analysisText
+      .replace(/##\s*處理文件[\s\S]*?(?=##|$)/gi, '')
+      .replace(/##\s*文件統計[\s\S]*?(?=##|$)/gi, '')
+      .replace(/##\s*處理結果[\s\S]*?(?=##|$)/gi, '');
+    
+    // 提取剩餘內容中的重要概念
+    const sentences = filteredText.match(/[^。！？\n]{10,50}[。！？]/g) || [];
+    sentences.slice(0, 3).forEach(sentence => {
+      const cleanSentence = sentence.replace(/[。！？\-\*#]/g, '').trim();
+      if (cleanSentence.length > 8) {
+        concepts.push({
+          concept: cleanSentence,
+          importance: 'medium',
+          source: 'filtered_analysis'
+        });
+      }
+    });
+  }
+  
+  // 確保至少有概念可用
+  if (concepts.length === 0) {
+    console.log('使用備用概念生成');
+    return [
+      { concept: '文檔核心內容分析', importance: 'high', source: 'fallback' },
+      { concept: '重要信息提取', importance: 'medium', source: 'fallback' },
+      { concept: '知識要點整理', importance: 'medium', source: 'fallback' }
+    ];
+  }
+  
+  console.log(`成功提取 ${concepts.length} 個概念`);
+  return concepts.slice(0, 5);
+}
+
+// 基於概念和分析數據生成學習卡片，專注於智能摘要和核心關鍵詞
+async function generateCardFromConcept(concept, analysisId) {
+  let analysis = null;
+  
+  // 獲取原始分析數據
+  if (analysisId) {
+    try {
+      const sql = dbManager.isPostgres ? 'SELECT * FROM analyses WHERE id = $1' : 'SELECT * FROM analyses WHERE id = ?';
+      analysis = await dbManager.get(sql, [analysisId]);
+    } catch (e) {
+      console.log('無法獲取分析數據');
+    }
+  }
+  
+  const conceptName = concept.concept;
+  const analysisText = analysis ? analysis.analysis_summary : '';
+  
+  // 提取智能摘要和核心關鍵詞區塊
+  const smartSummaryMatch = analysisText.match(/##\s*智能摘要[\s\S]*?(?=##|$)/i);
+  const keywordsMatch = analysisText.match(/##\s*核心關鍵詞[\s\S]*?(?=##|$)/i);
+  
+  let relevantContent = '';
+  if (smartSummaryMatch) {
+    relevantContent += smartSummaryMatch[0];
+  }
+  if (keywordsMatch) {
+    relevantContent += ' ' + keywordsMatch[0];
+  }
+  
+  // 如果沒有找到特定區塊，使用過濾後的分析內容
+  if (!relevantContent) {
+    relevantContent = analysisText
+      .replace(/##\s*處理文件[\s\S]*?(?=##|$)/gi, '')
+      .replace(/##\s*文件統計[\s\S]*?(?=##|$)/gi, '')
+      .replace(/##\s*處理結果[\s\S]*?(?=##|$)/gi, '');
+  }
+  
+  console.log(`為概念"${conceptName}"生成卡片，來源：${concept.source}`);
+  
+  // 生成概念解釋
+  let conceptExplanation = '';
+  
+  if (concept.source === 'smart_summary') {
+    // 如果來自智能摘要，提取相關描述
+    const conceptRegex = new RegExp(`[^。！？\\n]*${conceptName}[^。！？\\n]*[。！？]`, 'g');
+    const relatedSentences = relevantContent.match(conceptRegex) || [];
+    
+    if (relatedSentences.length > 0) {
+      conceptExplanation = relatedSentences.slice(0, 2).join(' ').replace(/[##\-\*]/g, '').trim();
+    } else {
+      // 提取前後文
+      const contextRegex = new RegExp(`[^。！？\\n]*[。！？]\\s*[^。！？\\n]*${conceptName}[^。！？\\n]*[。！？]`, 'g');
+      const contextSentences = relevantContent.match(contextRegex) || [];
+      if (contextSentences.length > 0) {
+        conceptExplanation = contextSentences[0].replace(/[##\-\*]/g, '').trim();
+      }
+    }
+  } else if (concept.source === 'keywords') {
+    // 如果來自關鍵詞，從智能摘要中找相關描述
+    const keywordRegex = new RegExp(`[^。！？\\n]*${conceptName}[^。！？\\n]*[。！？]`, 'g');
+    const keywordSentences = relevantContent.match(keywordRegex) || [];
+    if (keywordSentences.length > 0) {
+      conceptExplanation = keywordSentences[0].replace(/[##\-\*]/g, '').trim();
+    }
+  }
+  
+  // 如果沒有找到相關描述，生成基本解釋
+  if (!conceptExplanation || conceptExplanation.length < 10) {
+    conceptExplanation = `${conceptName}是文檔中的重要概念，根據智能摘要分析，這個概念在整體內容中具有重要意義。`;
+  }
+  
+  // 從相關內容中尋找實例
+  const exampleKeywords = ['例如', '比如', '舉例', '案例', '實例', '具體', '實際', '包括', '特別是'];
+  let example = '';
+  
+  for (const keyword of exampleKeywords) {
+    const exampleRegex = new RegExp(`[^。！？\\n]*${keyword}[^。！？\\n]*[。！？]`, 'g');
+    const examples = relevantContent.match(exampleRegex);
+    if (examples && examples.length > 0) {
+      example = examples[0].replace(/[##\-\*]/g, '').trim();
+      break;
+    }
+  }
+  
+  if (!example) {
+    example = `根據智能摘要內容，${conceptName}在實際應用中可以通過文檔描述的方法和策略來體現其價值。`;
+  }
+  
+  // 根據概念來源生成個人化應用建議
+  const applicationSuggestions = [
+    `1. 深入研讀智能摘要中關於${conceptName}的關鍵描述`,
+    `2. 理解${conceptName}在文檔整體脈絡中的重要作用`,
+    `3. 將${conceptName}的核心要點應用到相關的實際場景中`
+  ];
+  
+  if (concept.source === 'keywords') {
+    applicationSuggestions.push(`4. 關注此關鍵詞在不同段落中的使用context和含義`);
+  } else if (concept.source === 'smart_summary') {
+    applicationSuggestions.push(`4. 結合摘要內容，深化對${conceptName}的理解和應用`);
+  }
+  
+  applicationSuggestions.push(`5. 定期回顧並實踐，建立與其他概念的關聯`);
+  
+  return {
+    title: conceptName,
+    concept: conceptExplanation,
+    example: example,
+    application: applicationSuggestions.join('\n')
+  };
+}
+
 // 備用分析方案
 function generateFallbackAnalysis(text, fileNames) {
   return `# AI分析報告（備用模式）
@@ -557,6 +761,8 @@ app.get('/', (req, res) => {
             .btn-success:hover { background: #218838; }
             .btn-danger { background: #dc3545; }
             .btn-danger:hover { background: #c82333; }
+            .btn-info { background: #17a2b8; }
+            .btn-info:hover { background: #138496; }
             .btn-warning { background: #ffc107; color: #000; }
             .btn-warning:hover { background: #e0a800; }
             .search-area {
@@ -700,6 +906,68 @@ app.get('/', (req, res) => {
             #editContent {
                 min-height: 500px;
             }
+            .progress-info {
+                text-align: center;
+                padding: 20px;
+            }
+            .progress-bar {
+                width: 100%;
+                height: 20px;
+                background-color: #f0f0f0;
+                border-radius: 10px;
+                overflow: hidden;
+                margin: 10px 0;
+            }
+            .progress-fill {
+                height: 100%;
+                background: linear-gradient(90deg, #007bff, #17a2b8);
+                width: 0%;
+                transition: width 0.3s ease;
+                animation: progress-animation 2s infinite;
+            }
+            @keyframes progress-animation {
+                0% { background-position: 0% 50%; }
+                100% { background-position: 100% 50%; }
+            }
+            .card-note {
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                padding: 15px;
+                margin: 15px 0;
+                background: white;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .card-note h3 {
+                color: #007bff;
+                margin-top: 0;
+                border-bottom: 2px solid #007bff;
+                padding-bottom: 5px;
+            }
+            .card-note .concept {
+                background: #f8f9fa;
+                padding: 10px;
+                border-radius: 5px;
+                margin: 10px 0;
+            }
+            .card-note .example {
+                background: #e8f4f8;
+                padding: 10px;
+                border-radius: 5px;
+                margin: 10px 0;
+            }
+            .card-note .application {
+                background: #f0f8e8;
+                padding: 10px;
+                border-radius: 5px;
+                margin: 10px 0;
+            }
+            .connections {
+                background: #fff3cd;
+                padding: 15px;
+                border-radius: 8px;
+                margin: 15px 0;
+                border-left: 4px solid #ffc107;
+            }
 
             /* 響應式設計 - 手機版 */
             @media (max-width: 768px) {
@@ -842,12 +1110,13 @@ app.get('/', (req, res) => {
                 
                 .card-actions {
                     display: flex;
+                    flex-direction: column;
                     gap: 10px;
                     margin-top: 15px;
                 }
                 
                 .card-actions .btn {
-                    flex: 1;
+                    width: 100%;
                     text-align: center;
                     touch-action: manipulation;
                     min-height: 48px;
@@ -993,6 +1262,37 @@ app.get('/', (req, res) => {
                 <div class="modal-footer">
                     <button type="button" class="btn" onclick="closeEditModal()" style="margin-right: 10px;">取消</button>
                     <button type="button" class="btn btn-success" onclick="saveEdit()">💾 保存更改</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 卡片筆記模態框 -->
+        <div id="cardNotesModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>🗂️ AI卡片筆記</h2>
+                    <span class="close" onclick="closeCardNotesModal()">&times;</span>
+                </div>
+                
+                <div class="modal-body">
+                    <div id="cardNotesProgress" style="display: none;">
+                        <div class="progress-info">
+                            <p><strong>AI處理中...</strong></p>
+                            <div id="progressText">正在分析內容...</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="cardNotesContent">
+                        <!-- 卡片筆記內容將在這裡顯示 -->
+                    </div>
+                </div>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn" onclick="closeCardNotesModal()" style="margin-right: 10px;">關閉</button>
+                    <button type="button" class="btn btn-success" onclick="downloadMarkdown()" id="downloadBtn" style="display: none;">📥 下載 MD</button>
                 </div>
             </div>
         </div>
@@ -1191,7 +1491,8 @@ app.get('/', (req, res) => {
                         <td>\${createdAt}</td>
                         <td style="\${isUpdated ? 'color: #007bff; font-weight: bold;' : 'color: #666;'}" title="\${isUpdated ? '已編輯' : '未編輯'}">\${updatedAt}</td>
                         <td>
-                            <button class="btn btn-warning" onclick="editAnalysis(\${analysis.id})">編輯</button>
+                            <button class="btn btn-info" onclick="generateCardNotes(\${analysis.id})" style="margin-right: 5px;">卡片筆記</button>
+                            <button class="btn btn-warning" onclick="editAnalysis(\${analysis.id})" style="margin-right: 5px;">編輯</button>
                             <button class="btn btn-danger" onclick="deleteAnalysis(\${analysis.id})">刪除</button>
                         </td>
                     </tr>
@@ -1217,6 +1518,7 @@ app.get('/', (req, res) => {
                             </div>
                         </div>
                         <div class="card-actions">
+                            <button class="btn btn-info" onclick="generateCardNotes(\${analysis.id})">卡片筆記</button>
                             <button class="btn btn-warning" onclick="editAnalysis(\${analysis.id})">編輯</button>
                             <button class="btn btn-danger" onclick="deleteAnalysis(\${analysis.id})">刪除</button>
                         </div>
@@ -1321,6 +1623,184 @@ app.get('/', (req, res) => {
             window.onclick = function(event) {
                 // 全螢幕模式下不允許點擊外部關閉
             };
+
+            // 卡片筆記功能
+            let currentCardNotesData = '';
+
+            function generateCardNotes(id) {
+                document.getElementById('cardNotesModal').style.display = 'block';
+                document.getElementById('cardNotesProgress').style.display = 'block';
+                document.getElementById('cardNotesContent').style.display = 'none';
+                document.getElementById('downloadBtn').style.display = 'none';
+                
+                // 重置進度條
+                document.querySelector('.progress-fill').style.width = '0%';
+                
+                // 開始處理流程
+                processCardNotes(id);
+            }
+
+            async function processCardNotes(id) {
+                try {
+                    // 第一步：內容提取 (33%)
+                    updateProgress('正在提取核心概念...', 33);
+                    await sleep(1000);
+                    
+                    const conceptsResponse = await fetch('/card-notes/extract-concepts', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ analysisId: id })
+                    });
+                    const concepts = await conceptsResponse.json();
+                    
+                    if (!concepts.success) {
+                        throw new Error(concepts.error || '概念提取失敗');
+                    }
+                    
+                    // 第二步：卡片製作 (66%)
+                    updateProgress('正在製作原子化卡片...', 66);
+                    await sleep(1000);
+                    
+                    const cardsResponse = await fetch('/card-notes/create-cards', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ concepts: concepts.data || [], analysisId: id })
+                    });
+                    const cards = await cardsResponse.json();
+                    
+                    if (!cards.success) {
+                        throw new Error(cards.error || '卡片製作失敗');
+                    }
+                    
+                    // 第三步：建立連結 (100%)
+                    updateProgress('正在建立概念連結...', 100);
+                    await sleep(1000);
+                    
+                    const connectionsResponse = await fetch('/card-notes/create-connections', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ cards: cards.data || [] })
+                    });
+                    const connections = await connectionsResponse.json();
+                    
+                    if (!connections.success) {
+                        throw new Error(connections.error || '連結建立失敗');
+                    }
+                    
+                    // 顯示結果
+                    displayCardNotes(cards.data || [], connections.data || []);
+                    
+                } catch (error) {
+                    console.error('Error:', error);
+                    document.getElementById('cardNotesProgress').style.display = 'none';
+                    document.getElementById('cardNotesContent').innerHTML = 
+                        '<div style="text-align: center; color: #dc3545; padding: 20px;">處理失敗，請稍後再試</div>';
+                    document.getElementById('cardNotesContent').style.display = 'block';
+                }
+            }
+
+            function updateProgress(text, percentage) {
+                document.getElementById('progressText').textContent = text;
+                document.querySelector('.progress-fill').style.width = percentage + '%';
+            }
+
+            function sleep(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+
+            function displayCardNotes(cards, connections) {
+                document.getElementById('cardNotesProgress').style.display = 'none';
+                
+                let html = '<h3>🗂️ 原子化卡片筆記</h3>';
+                
+                // 確保 cards 是數組
+                if (!Array.isArray(cards)) {
+                    cards = [];
+                }
+                
+                // 顯示卡片
+                cards.forEach((card, index) => {
+                    html += \`
+                    <div class="card-note">
+                        <h3>卡片 \${index + 1}: \${card.title}</h3>
+                        <div class="concept">
+                            <strong>💡 概念解釋：</strong><br>
+                            \${card.concept}
+                        </div>
+                        <div class="example">
+                            <strong>📋 實例說明：</strong><br>
+                            \${card.example}
+                        </div>
+                        <div class="application">
+                            <strong>🎯 個人應用建議：</strong><br>
+                            \${card.application}
+                        </div>
+                    </div>
+                \`;
+                });
+                
+                // 顯示概念連結
+                if (connections && connections.length > 0) {
+                    html += '<div class="connections">';
+                    html += '<h3>🔗 概念地圖與連結</h3>';
+                    connections.forEach(connection => {
+                        html += \`<p><strong>\${connection.from}</strong> ↔ <strong>\${connection.to}</strong><br>關係：\${connection.relationship}</p>\`;
+                    });
+                    html += '</div>';
+                }
+                
+                document.getElementById('cardNotesContent').innerHTML = html;
+                document.getElementById('cardNotesContent').style.display = 'block';
+                document.getElementById('downloadBtn').style.display = 'inline-block';
+                
+                // 生成Markdown內容用於下載
+                generateMarkdownContent(cards, connections);
+            }
+
+            function generateMarkdownContent(cards, connections) {
+                let markdown = '# 🗂️ AI卡片筆記\\n\\n';
+                markdown += '> 透過AI工作流程生成的原子化學習卡片\\n\\n';
+                
+                markdown += '## 📚 學習卡片\\n\\n';
+                cards.forEach((card, index) => {
+                    markdown += \`### 卡片 \${index + 1}: \${card.title}\\n\\n\`;
+                    markdown += \`**💡 概念解釋：**\\n\${card.concept}\\n\\n\`;
+                    markdown += \`**📋 實例說明：**\\n\${card.example}\\n\\n\`;
+                    markdown += \`**🎯 個人應用建議：**\\n\${card.application}\\n\\n\`;
+                    markdown += '---\\n\\n';
+                });
+                
+                if (connections && connections.length > 0) {
+                    markdown += '## 🔗 概念地圖\\n\\n';
+                    connections.forEach(connection => {
+                        markdown += \`- **\${connection.from}** ↔ **\${connection.to}**\\n\`;
+                        markdown += \`  - 關係：\${connection.relationship}\\n\\n\`;
+                    });
+                }
+                
+                markdown += '\\n---\\n';
+                markdown += \`\\n*生成時間：\${new Date().toLocaleString()}*\\n\`;
+                
+                currentCardNotesData = markdown;
+            }
+
+            function closeCardNotesModal() {
+                document.getElementById('cardNotesModal').style.display = 'none';
+            }
+
+            function downloadMarkdown() {
+                if (!currentCardNotesData) return;
+                
+                const blob = new Blob([currentCardNotesData], { type: 'text/markdown' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = \`AI卡片筆記_\${new Date().getFullYear()}\${(new Date().getMonth()+1).toString().padStart(2,'0')}\${new Date().getDate().toString().padStart(2,'0')}.md\`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            }
         </script>
     </body>
     </html>
@@ -1451,6 +1931,158 @@ app.delete('/analyses/:id', async (req, res) => {
   } catch (err) {
     console.error('數據庫錯誤:', err);
     res.json({ success: false, error: '刪除失敗' });
+  }
+});
+
+// 卡片筆記相關API端點
+
+// 第一步：內容提取核心概念
+app.post('/card-notes/extract-concepts', async (req, res) => {
+  try {
+    const { analysisId } = req.body;
+    
+    // 獲取原始分析數據
+    const sql = dbManager.isPostgres ? 'SELECT * FROM analyses WHERE id = $1' : 'SELECT * FROM analyses WHERE id = ?';
+    const analysis = await dbManager.get(sql, [analysisId]);
+    
+    if (!analysis) {
+      return res.json({ success: false, error: '找不到分析記錄' });
+    }
+
+    // AI提取核心概念 - 使用本地分析邏輯
+    let concepts = [];
+    
+    try {
+      // 嘗試使用AI分析
+      const prompt = `請從以下內容中提取3-5個核心概念：${analysis.analysis_summary}`;
+      const aiResponse = await performAIAnalysis(prompt, ['概念提取']);
+      
+      // 解析AI回應
+      const jsonMatch = aiResponse.match(/\[[\s\S]*?\]/);
+      if (jsonMatch) {
+        concepts = JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.log('AI分析不可用，使用本地概念提取');
+    }
+    
+    // 如果AI分析失敗，使用基於實際內容的本地概念提取
+    if (concepts.length === 0) {
+      console.log('使用本地概念提取，基於實際分析內容');
+      
+      const analysisText = analysis.analysis_summary || '';
+      const contentText = analysis.content_text || '';
+      
+      // 從AI分析摘要中提取關鍵概念
+      concepts = extractConceptsFromAnalysis(analysisText, contentText);
+    }
+
+    res.json({ success: true, data: concepts });
+  } catch (error) {
+    console.error('概念提取錯誤:', error);
+    res.json({ success: false, error: '概念提取失敗' });
+  }
+});
+
+// 第二步：創建原子化卡片
+app.post('/card-notes/create-cards', async (req, res) => {
+  try {
+    const { concepts, analysisId } = req.body;
+    
+    // 確保 concepts 是數組
+    if (!Array.isArray(concepts)) {
+      return res.json({ success: false, error: '概念數據格式錯誤' });
+    }
+    
+    const cards = [];
+    for (let concept of concepts) {
+      let card = {};
+      
+      try {
+        // 嘗試AI分析
+        const prompt = `為概念"${concept.concept}"創建學習卡片`;
+        const aiResponse = await performAIAnalysis(prompt, ['卡片製作']);
+        
+        const jsonMatch = aiResponse.match(/\{[\s\S]*?\}/);
+        if (jsonMatch) {
+          card = JSON.parse(jsonMatch[0]);
+        }
+      } catch (e) {
+        console.log('使用本地卡片生成');
+      }
+      
+      // 如果AI失敗，使用基於實際分析內容的本地邏輯
+      if (!card.title) {
+        console.log('使用本地卡片生成，基於實際分析內容');
+        card = await generateCardFromConcept(concept, analysisId);
+      }
+      
+      cards.push(card);
+    }
+
+    res.json({ success: true, data: cards });
+  } catch (error) {
+    console.error('卡片創建錯誤:', error);
+    res.json({ success: false, error: '卡片創建失敗' });
+  }
+});
+
+// 第三步：建立概念連結
+app.post('/card-notes/create-connections', async (req, res) => {
+  try {
+    const { cards } = req.body;
+    
+    // 確保 cards 是數組
+    if (!Array.isArray(cards) || cards.length < 2) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const cardTitles = cards.map(card => card.title || '未知概念');
+    let connections = [];
+    
+    try {
+      // 嘗試AI分析
+      const prompt = `分析概念關聯性：${cardTitles.join(', ')}`;
+      const aiResponse = await performAIAnalysis(prompt, ['連結分析']);
+      
+      const jsonMatch = aiResponse.match(/\[[\s\S]*?\]/);
+      if (jsonMatch) {
+        connections = JSON.parse(jsonMatch[0]);
+      }
+    } catch (e) {
+      console.log('使用本地連結生成');
+    }
+    
+    // 如果AI失敗，使用本地邏輯創建連結
+    if (connections.length === 0 && cardTitles.length >= 2) {
+      connections = [];
+      
+      // 創建基本的概念連結
+      for (let i = 0; i < Math.min(cardTitles.length - 1, 3); i++) {
+        const from = cardTitles[i];
+        const to = cardTitles[i + 1];
+        
+        connections.push({
+          from: from,
+          to: to,
+          relationship: `${from}與${to}在文檔中相互補充，共同構成了完整的知識體系`
+        });
+      }
+      
+      // 如果有3個以上概念，添加第一個和最後一個的連結
+      if (cardTitles.length >= 3) {
+        connections.push({
+          from: cardTitles[0],
+          to: cardTitles[cardTitles.length - 1],
+          relationship: `${cardTitles[0]}是基礎概念，${cardTitles[cardTitles.length - 1]}是應用層面的體現`
+        });
+      }
+    }
+
+    res.json({ success: true, data: connections });
+  } catch (error) {
+    console.error('連結建立錯誤:', error);
+    res.json({ success: false, error: '連結建立失敗' });
   }
 });
 
